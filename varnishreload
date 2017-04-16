@@ -7,6 +7,7 @@ MAXIMUM=
 WORK_DIR=
 VCL_FILE=
 WARMUP=
+QUIET=
 SCRIPT="$0"
 
 usage() {
@@ -24,6 +25,7 @@ usage() {
 	-m <maximum> : maximum number of available reloads to leave behind
 	-n <workdir> : for a different working directory for varnishd
 	-w <warmup>  : the waiting period between load and use operations
+	-q           : run with no output
 
 	When <file> is empty or missing, the active VCL's file is used but
 	will fail if the active VCL wasn't loaded from a file.
@@ -52,7 +54,10 @@ varnishadm() {
 }
 
 fail() {
-	echo "Error: $*" >&2
+	if [ -z "$QUIET" ]
+	then
+		echo "Error: $*" >&2
+	fi
 	exit 1
 }
 
@@ -104,13 +109,14 @@ vcl_reload_name() {
 	printf "reload_%s" "$(date +%Y%m%d_%H%M%S)"
 }
 
-while getopts hm:n:w: OPT
+while getopts hm:n:w:q OPT
 do
 	case $OPT in
 	h) usage ;;
 	m) MAXIMUM=$OPTARG ;;
 	n) WORK_DIR=$OPTARG ;;
 	w) WARMUP=$OPTARG ;;
+	q) QUIET="TRUE" ;;
 	*) usage "wrong usage" >&2 ;;
 	esac
 done
@@ -132,11 +138,19 @@ fi
 
 RELOAD_NAME=$(vcl_reload_name)
 
-varnishadm vcl.load "$RELOAD_NAME" "$VCL_FILE"
+OUTPUT=$(varnishadm vcl.load "$RELOAD_NAME" "$VCL_FILE")
+if [ -z "$QUIET" ]
+then
+	echo "$OUTPUT"
+fi
 
 test -n "$WARMUP" && sleep "$WARMUP"
 
-varnishadm vcl.use  "$RELOAD_NAME"
+OUTPUT=$(varnishadm vcl.use  "$RELOAD_NAME")
+if [ -z "$QUIET" ]
+then
+    echo "$OUTPUT"
+fi
 
 safe_test() {
 	test -z "$1" && return 1
@@ -151,5 +165,8 @@ do
 	safe_test "$COUNT" -gt "$MAXIMUM" || exit 0
 	OLDEST=$(vcl_reload_oldest)
 	varnishadm vcl.discard "$OLDEST" >/dev/null
-	echo "VCL '$OLDEST' was discarded"
+	if [ -z "$QUIET" ]
+	then
+		echo "VCL '$OLDEST' was discarded"
+	fi
 done
